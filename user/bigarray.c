@@ -9,7 +9,7 @@
 int array[ARRAYSIZE];
 
 int main() {
-  int pids[16];
+  int pids[NUM_PROCESSES];
   int n, statuses[64];
   int i, quarter = ARRAYSIZE / NUM_PROCESSES;
   
