@@ -1,7 +1,8 @@
 {
     "files.associations": {
-        "types.h": "c",
-        "riscv.h": "c",
-        "defs.h": "c",
-    },
+		"types.h": "c",
+		"riscv.h": "c",
+		"defs.h": "c",
+		"memlayout.h": "c"
+	},
 }

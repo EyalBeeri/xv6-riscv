@@ -185,5 +185,12 @@ void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
 void            virtio_disk_intr(void);
 
+// peterson.c
+void            petersoninit(void);
+int             peterson_create(void);
+int             peterson_acquire(int, int);
+int             peterson_release(int, int);
+int             peterson_destroy(int);
+
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
