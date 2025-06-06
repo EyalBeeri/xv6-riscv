@@ -371,8 +371,11 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
     // Get the physical address
     pa = PTE2PA(*pte);
     
-    // Get flags from source and ensure it's writable and shared
-    flags = (PTE_FLAGS(*pte) | PTE_W | PTE_S);
+    // Get flags from source and add shared flag 
+    flags = (PTE_FLAGS(*pte) | PTE_S | PTE_W);
+    
+    // Mark source page as shared to prevent it from being freed
+    *pte |= PTE_S;
     
     // Map the physical page to destination process
     if(mappages(dst_proc->pagetable, dst_va + (a - start_va), 

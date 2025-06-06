@@ -17,6 +17,8 @@
 #include "file.h"
 #include "fcntl.h"
 
+extern struct proc proc[NPROC];
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -505,8 +507,6 @@ sys_pipe(void)
   return 0;
 }
 
-extern struct proc proc[NPROC];
-
 uint64
 sys_map_shared_pages(void)
 {
@@ -514,11 +514,13 @@ sys_map_shared_pages(void)
   int pid;
   struct proc *p = myproc();
   struct proc *src_proc;
+  
+  // Get arguments without checking return values
   argint(0, &pid);
   argaddr(1, &src_va);
   argaddr(2, &size);
   
-  // Check if arguments are valid
+  // Validate arguments manually
   if(pid <= 0 || src_va == 0 || size == 0)
     return -1;
   
@@ -527,7 +529,7 @@ sys_map_shared_pages(void)
     acquire(&src_proc->lock);
     if(src_proc->pid == pid) {
       release(&src_proc->lock);
-      // FIXED: Swapped the order - map from src_proc to current process
+      // Map from source process to current process
       return map_shared_pages(src_proc, p, src_va, size);
     }
     release(&src_proc->lock);
@@ -542,9 +544,11 @@ sys_unmap_shared_pages(void)
   uint64 addr, size;
   struct proc *p = myproc();
   
+  // Get arguments without checking return values
   argaddr(0, &addr);
   argaddr(1, &size);
   
+  // Validate arguments manually
   if(addr == 0 || size == 0)
     return -1;
   
