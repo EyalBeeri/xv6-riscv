@@ -5,12 +5,13 @@
 //
 
 #include "types.h"
-#include "riscv.h"
-#include "defs.h"
 #include "param.h"
-#include "stat.h"
+#include "memlayout.h"
+#include "riscv.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "defs.h"
+#include "stat.h"
 #include "fs.h"
 #include "sleeplock.h"
 #include "file.h"
@@ -502,4 +503,50 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+extern struct proc proc[NPROC];
+
+uint64
+sys_map_shared_pages(void)
+{
+  uint64 src_va, size;
+  int pid;
+  struct proc *p = myproc();
+  struct proc *src_proc;
+  argint(0, &pid);
+  argaddr(1, &src_va);
+  argaddr(2, &size);
+  
+  // Check if arguments are valid
+  if(pid <= 0 || src_va == 0 || size == 0)
+    return -1;
+  
+  // Find source process by pid
+  for(src_proc = proc; src_proc < &proc[NPROC]; src_proc++){
+    acquire(&src_proc->lock);
+    if(src_proc->pid == pid) {
+      release(&src_proc->lock);
+      // FIXED: Swapped the order - map from src_proc to current process
+      return map_shared_pages(src_proc, p, src_va, size);
+    }
+    release(&src_proc->lock);
+  }
+  
+  return -1;
+}
+
+uint64
+sys_unmap_shared_pages(void)
+{
+  uint64 addr, size;
+  struct proc *p = myproc();
+  
+  argaddr(0, &addr);
+  argaddr(1, &size);
+  
+  if(addr == 0 || size == 0)
+    return -1;
+  
+  return unmap_shared_pages(p, addr, size);
 }

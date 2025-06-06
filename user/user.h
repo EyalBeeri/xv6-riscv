@@ -8,6 +8,8 @@ int pipe(int*);
 int write(int, const void*, int);
 int read(int, void*, int);
 int close(int);
+uint64 map_shared_pages(int pid, void *src_addr, uint64 size);
+int unmap_shared_pages(void *addr, uint64 size);
 int kill(int);
 int exec(const char*, char**);
 int open(const char*, int);

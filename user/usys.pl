@@ -22,6 +22,8 @@ entry("pipe");
 entry("read");
 entry("write");
 entry("close");
+entry("map_shared_pages");
+entry("unmap_shared_pages");
 entry("kill");
 entry("exec");
 entry("open");

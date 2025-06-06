@@ -5,6 +5,12 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "proc.h"
+#include "stat.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -184,8 +190,12 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
-      uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      // Only free physical memory if the page is not shared
+      // or if this is an explicit free of a shared page
+      if((*pte & PTE_S) == 0) {
+        uint64 pa = PTE2PA(*pte);
+        kfree((void*)pa);
+      }
     }
     *pte = 0;
   }
@@ -330,6 +340,88 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
+}
+
+// Map pages from src_proc to dst_proc starting at src_va for size bytes
+// Returns the virtual address in dst_proc where mapping starts
+uint64
+map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, uint64 size)
+{
+  uint64 start_va, end_va, a, pa;
+  pte_t *pte;
+  uint flags;
+  uint64 offset, dst_va;
+  
+  if(size == 0)
+    return 0;
+
+  offset = src_va % PGSIZE;
+  start_va = PGROUNDDOWN(src_va);
+  end_va = PGROUNDUP(src_va + size);
+  
+  // Set dst_va to the current process size, aligned to page boundary
+  dst_va = PGROUNDUP(dst_proc->sz);
+  
+  for(a = start_va; a < end_va; a += PGSIZE) {
+    // Check if source page exists and is accessible
+    if((pte = walk(src_proc->pagetable, a, 0)) == 0 || 
+       ((*pte & PTE_V) == 0) || ((*pte & PTE_U) == 0))
+      return 0;
+    
+    // Get the physical address
+    pa = PTE2PA(*pte);
+    
+    // Get flags from source and ensure it's writable and shared
+    flags = (PTE_FLAGS(*pte) | PTE_W | PTE_S);
+    
+    // Map the physical page to destination process
+    if(mappages(dst_proc->pagetable, dst_va + (a - start_va), 
+                PGSIZE, pa, flags) != 0) {
+      // On failure, unmap already mapped pages
+      if(a > start_va)
+        uvmunmap(dst_proc->pagetable, dst_va, (a - start_va) / PGSIZE, 0);
+      return 0;
+    }
+  }
+  
+  // Update the size of the destination process
+  dst_proc->sz = dst_va + (end_va - start_va);
+  
+  // Return virtual address in dst_proc that corresponds to src_va
+  return dst_va + offset;
+}
+
+// Unmap shared pages from process p starting at addr for size bytes
+// Returns 0 on success, -1 on failure
+uint64
+unmap_shared_pages(struct proc* p, uint64 addr, uint64 size)
+{
+  uint64 start_va, end_va, npages;
+  pte_t *pte;
+  
+  if(size == 0)
+    return 0;
+    
+  start_va = PGROUNDDOWN(addr);
+  end_va = PGROUNDUP(addr + size);
+  npages = (end_va - start_va) / PGSIZE;
+  
+  // Check if the pages are shared
+  for(uint64 a = start_va; a < end_va; a += PGSIZE) {
+    if((pte = walk(p->pagetable, a, 0)) == 0 || 
+       ((*pte & PTE_V) == 0) || ((*pte & PTE_S) == 0))
+      return -1;
+  }
+  
+  // Unmap the pages without freeing physical memory
+  uvmunmap(p->pagetable, start_va, npages, 0);
+  
+  // If the unmapped pages were at the end of the address space,
+  // update the process size
+  if(end_va == PGROUNDUP(p->sz))
+    p->sz = start_va;
+    
+  return 0;
 }
 
 // mark a PTE invalid for user access.
