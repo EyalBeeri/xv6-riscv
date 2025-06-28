@@ -92,7 +92,6 @@ void write_messages(header_t *buf_start, int child_idx) {
         
         // If we've reached the end of the buffer, stop writing
         if (addr + sizeof(header_t) >= buf_end) {
-            printf("Child %d: buffer full after writing %d messages\n", child_idx, msg_num);
             break;
         }
         
@@ -101,8 +100,9 @@ void write_messages(header_t *buf_start, int child_idx) {
             addr = (uint64)buf_start;
         }
         
-        // Small delay to allow other children to write
-        for (volatile int i = 0; i < 1000; i++);
+        // Added significant delay between messages to ensure concurrency
+        // This ensures children write slowly while parent reads periodically
+        sleep(1);  // Sleep for 1 tick between each message
     }
 }
 
@@ -112,9 +112,6 @@ void read_messages(header_t *buf_start) {
     uint64 buf_end = addr + BUFFER_SIZE;
     int msg_count = 0;
     int child_count[NUM_CHILDREN] = {0};
-    
-    printf("\nParent reading messages from shared buffer:\n");
-    printf("--------------------------------------\n");
     
     while (addr + sizeof(header_t) < buf_end) {
         header_t *header_ptr = (header_t*)addr;
@@ -182,33 +179,34 @@ int main() {
         }
         
         if (pid == 0) {
-            // Child process
-            printf("Child %d started with pid %d\n", i, getpid());
+            // Child process - NO PRINTING ALLOWED
             
             // Map shared memory from parent
             uint64 addr = map_shared_pages(parent_pid, shared_buf, BUFFER_SIZE);
             if (addr == 0) {
-                printf("Child %d: mapping failed\n", i);
-                exit(1);
+                exit(1);  // Fail silently
             }
-            
-            printf("Child %d mapped shared buffer at %p\n", i, (void*)addr);
             
             // Write messages to the shared buffer
             write_messages((header_t*)addr, i);
             
-            printf("Child %d finished writing messages\n", i);
+            // Exit without printing
             exit(0);
         }
     }
     
-    // Parent waits a bit to allow children to start writing
-    sleep(10);
+    // Parent reads messages periodically while children are writing
+    printf("Parent starting to read messages while children write...\n");
     
-    // Read messages a few times to show progress
-    for (int i = 0; i < 3; i++) {
+    // Read messages multiple times to demonstrate concurrent operation
+    for (int read_cycle = 0; read_cycle < 5; read_cycle++) {
+        printf("\n=== Read cycle %d ===\n", read_cycle + 1);
+        printf("Parent reading messages from shared buffer:\n");
+        printf("--------------------------------------\n");
         read_messages((header_t*)shared_buf);
-        sleep(10);
+        
+        // Sleep between reads to let children continue writing
+        sleep(3);
     }
     
     // Wait for all children to exit
@@ -217,10 +215,14 @@ int main() {
     }
     
     // Final read of all messages
+    printf("\n=== Final read after all children finished ===\n");
+    printf("Parent reading messages from shared buffer:\n");
+    printf("--------------------------------------\n");
     read_messages((header_t*)shared_buf);
     
     // Clean up
     free(shared_buf);
     
+    printf("\nLog test completed successfully!\n");
     return 0;
 }

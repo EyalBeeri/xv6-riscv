@@ -355,6 +355,10 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
   if(size == 0)
     return 0;
 
+  // Acquire locks for both processes
+  acquire(&src_proc->lock);
+  if(src_proc != dst_proc) acquire(&dst_proc->lock);
+  
   offset = src_va % PGSIZE;
   start_va = PGROUNDDOWN(src_va);
   end_va = PGROUNDUP(src_va + size);
@@ -365,8 +369,12 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
   for(a = start_va; a < end_va; a += PGSIZE) {
     // Check if source page exists and is accessible
     if((pte = walk(src_proc->pagetable, a, 0)) == 0 || 
-       ((*pte & PTE_V) == 0) || ((*pte & PTE_U) == 0))
+       ((*pte & PTE_V) == 0) || ((*pte & PTE_U) == 0)) {
+      // Release locks before returning on failure
+      if(src_proc != dst_proc) release(&dst_proc->lock);
+      release(&src_proc->lock);
       return 0;
+    }
     
     // Get the physical address
     pa = PTE2PA(*pte);
@@ -383,12 +391,20 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
       // On failure, unmap already mapped pages
       if(a > start_va)
         uvmunmap(dst_proc->pagetable, dst_va, (a - start_va) / PGSIZE, 0);
+      
+      // Release locks before returning on failure
+      if(src_proc != dst_proc) release(&dst_proc->lock);
+      release(&src_proc->lock);
       return 0;
     }
   }
   
   // Update the size of the destination process
   dst_proc->sz = dst_va + (end_va - start_va);
+  
+  // Release locks before returning
+  if(src_proc != dst_proc) release(&dst_proc->lock);
+  release(&src_proc->lock);
   
   // Return virtual address in dst_proc that corresponds to src_va
   return dst_va + offset;
@@ -404,6 +420,9 @@ unmap_shared_pages(struct proc* p, uint64 addr, uint64 size)
   
   if(size == 0)
     return 0;
+  
+  // Acquire process lock
+  acquire(&p->lock);
     
   start_va = PGROUNDDOWN(addr);
   end_va = PGROUNDUP(addr + size);
@@ -412,8 +431,10 @@ unmap_shared_pages(struct proc* p, uint64 addr, uint64 size)
   // Check if the pages are shared
   for(uint64 a = start_va; a < end_va; a += PGSIZE) {
     if((pte = walk(p->pagetable, a, 0)) == 0 || 
-       ((*pte & PTE_V) == 0) || ((*pte & PTE_S) == 0))
+       ((*pte & PTE_V) == 0) || ((*pte & PTE_S) == 0)) {
+      release(&p->lock);
       return -1;
+    }
   }
   
   // Unmap the pages without freeing physical memory
@@ -423,6 +444,9 @@ unmap_shared_pages(struct proc* p, uint64 addr, uint64 size)
   // update the process size
   if(end_va == PGROUNDUP(p->sz))
     p->sz = start_va;
+  
+  // Release process lock
+  release(&p->lock);
     
   return 0;
 }
