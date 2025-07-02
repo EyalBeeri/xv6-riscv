@@ -380,7 +380,7 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
     pa = PTE2PA(*pte);
     
     // Get flags from source and add shared flag 
-    flags = (PTE_FLAGS(*pte) | PTE_S | PTE_W);
+    flags = (PTE_FLAGS(*pte) | PTE_S);
     
     // Mark source page as shared to prevent it from being freed
     *pte |= PTE_S;
